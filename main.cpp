@@ -9,11 +9,38 @@
 #include <atomic>
 #include <cstdlib>
 
-std::vector<uint32_t> localPlayerPtrOffset = {0x1097438, 0x0}; 
+namespace localPlayer {
+    std::vector<uint32_t> basePtrOffset = {0x1097438, 0x0}; 
 
-std::vector<uint32_t> camXOffset = { 0x10, 0x120, 0x70 };
-std::vector<uint32_t> camYOffset = { 0x10, 0x120, 0x74 };
-std::vector<uint32_t> camZOffset = { 0x10, 0x120, 0x78 };
+    std::vector<uint32_t> camXOffset = { 0x10, 0x120, 0x70 };
+    std::vector<uint32_t> camYOffset = { 0x10, 0x120, 0x74 };
+    std::vector<uint32_t> camZOffset = { 0x10, 0x120, 0x78 };
+
+    std::vector<uint32_t> CoordOffsets = {0x0, 0x28, 0xE8, 0x4, 0x0};
+
+    std::vector<uint32_t> xOffsets = {0x80};
+    std::vector<uint32_t> yOffsets = {0x84};
+    std::vector<uint32_t> zOffsets = {0x88};
+}
+
+namespace World {
+    std::vector<uint32_t> worldOffset = {0x1097484, 0x0};
+
+    std::vector<uint32_t> NodeInfoOffsets = {0x7C};
+
+    std::vector<uint32_t> baseAddressOffsets = {0x0};
+    std::vector<uint32_t> stepOffsets = {0x4};
+    std::vector<uint32_t> sizeOffsets = {0x8};
+
+    std::vector<uint32_t> EntityOffsets = {0x10, 0xE8, 0x4, 0x0};
+    std::vector<uint32_t> levelOffsets = {0x58, 0xE8, 0x54, 0x120};
+    std::vector<uint32_t> nameOffsets = {0x58, 0x64, 0x0};
+    std::vector<uint32_t> isDeathOffsets = {0x58, 0x0};
+    std::vector<uint32_t> healthOffsets = {0x58, 0xE8, 0x84, 0x80};
+    std::vector<uint32_t> xOffsets = {0x58, 0xE8, 0x4, 0x80};
+    std::vector<uint32_t> yOffsets = {0x58, 0xE8, 0x4, 0x84};
+    std::vector<uint32_t> zOffsets = {0x58, 0xE8, 0x4, 0x88};
+}
 
 // Store original instructions for restoration
 std::array<std::vector<BYTE>, 3> originalInstructions;
@@ -88,7 +115,7 @@ void cleanup()
     }
 }
 
-uint32_t GetAddress(HANDLE hProcess, const uint32_t &base, const std::vector<uint32_t> &offsets)
+uint32_t GetAddress(const uint32_t &base, const std::vector<uint32_t> &offsets)
 {
     if (offsets.empty())
         return base;
@@ -104,22 +131,110 @@ uint32_t GetAddress(HANDLE hProcess, const uint32_t &base, const std::vector<uin
 }
 
 template <typename T>
-T Read(HANDLE hProcess, const uint32_t &address)
+T Read(const uint32_t &address)
 {
     T value = T();
     ReadProcessMemory(hProcess, reinterpret_cast<LPCVOID>(address), &value, sizeof(T), nullptr);
     return value;
 }
 
+std::string ReadStr(const uint32_t &address, const size_t &maxLen)
+{
+    std::string str;
+    char c;
+    while (ReadProcessMemory(hProcess, reinterpret_cast<LPCVOID>(address + str.size()), &c, 1, nullptr) &&
+           c != '\0' && str.size() < maxLen)
+        str += c;
+    return str;
+}
+
 void Aimbot(HANDLE hProcess, const uint32_t &gameAddr, const std::array<LPVOID, 3>& addresses) {
-    auto lpAddr = GetAddress(hProcess, gameAddr, localPlayerPtrOffset);
+    //printf("Running aimbot\n");
+    auto lpAddr = GetAddress(gameAddr, localPlayer::basePtrOffset);
+    auto world = GetAddress(gameAddr, World::worldOffset);
 
-    auto x = Read<float>(hProcess, GetAddress(hProcess, lpAddr, camXOffset));
-    auto y = Read<float>(hProcess, GetAddress(hProcess, lpAddr, camYOffset));
-    auto z = Read<float>(hProcess, GetAddress(hProcess, lpAddr, camZOffset));
+    auto x = Read<float>(GetAddress(lpAddr, localPlayer::camXOffset));
+    auto y = Read<float>(GetAddress(lpAddr, localPlayer::camYOffset));
+    auto z = Read<float>(GetAddress(lpAddr, localPlayer::camZOffset));
 
+    auto coordAddr = GetAddress(lpAddr, localPlayer::CoordOffsets);
+
+    auto px = Read<float>(GetAddress(coordAddr, localPlayer::xOffsets));
+    auto py = Read<float>(GetAddress(coordAddr, localPlayer::yOffsets));
+    auto pz = Read<float>(GetAddress(coordAddr, localPlayer::zOffsets));
+
+    vec3 playerPos(px, py, pz);
+
+    std::vector<uint32_t> nodes;
+
+    float nearestRange = 45.f;
+    vec3 target;
+    std::string targetName = "none";
+
+    const auto nodeInfo = GetAddress(world, World::NodeInfoOffsets);
+
+    //printf("nodeInfo address: %08X\n", nodeInfo);
+    const auto baseAddr = Read<uint32_t>(GetAddress(nodeInfo, World::baseAddressOffsets));
+    const auto size = Read<uint32_t>(GetAddress(nodeInfo, World::sizeOffsets));
+    const auto step = Read<uint32_t>(GetAddress(nodeInfo, World::stepOffsets));
+
+    for (uint32_t i = 0; i < size; i++)
+    {
+        uint32_t address = baseAddr + i * step;
+        uint32_t addressNext;
+        do
+        {
+            addressNext = Read<uint32_t>(address);
+            
+            if (addressNext != 1) {
+                //printf("nodes NODE UPDATE: %08X ADDRESS NEXT: %08X STEP: %d\n", address, addressNext, step);
+                nodes.emplace_back(address);
+            }
+            address = addressNext & 0xFFFFFFFE;
+        } while ((addressNext & 0xFFFFFFFE) != 0);
+    }
+
+    for (const auto& node : nodes) {
+        const auto entity = GetAddress(node, World::EntityOffsets);
+        const auto nameAddr = GetAddress(entity, World::nameOffsets);
+        //printf("%08X Name address: %08X\n", entity, nameAddr);
+
+        if (nameAddr != 0) {
+            const auto name2 = ReadStr(nameAddr, 128);
+
+            if (name2.length() > 0) {
+                auto entityX = Read<float>(GetAddress(entity, World::xOffsets));
+                auto entityY = Read<float>(GetAddress(entity, World::yOffsets));
+                auto entityZ = Read<float>(GetAddress(entity, World::zOffsets));
+
+                vec3 entityPos (entityX, entityY, entityZ);
+
+                auto delta = playerPos - entityPos;
+				auto dist = sqrt(delta.x * delta.x + delta.y * delta.y + delta.z * delta.z);
+
+                if (
+                    dist < nearestRange &&
+                    name2.find("pet") == std::string::npos &&
+                    name2.find("portal") == std::string::npos &&
+                    name2.find("abilities") == std::string::npos &&
+                    name2.find("placeable") == std::string::npos &&
+                    name2.find("cornerstone") == std::string::npos &&
+                    name2.find("services") == std::string::npos &&
+                    name2.find("client") == std::string::npos &&
+                    name2.find("mana") == std::string::npos &&
+                    name2.find("karma") == std::string::npos
+                    ) {
+                    nearestRange = dist;
+                    target = entityPos;
+                    targetName = name2;
+                }
+            }
+        }
+    }
+
+    printf("target dist: %.0f target name: %s\r", nearestRange, targetName.c_str());
+    //printf("player pos: %.0f %.0f %.0f\n", playerPos.x, playerPos.y, playerPos.z);
     vec3 camPos(x, y, z);
-    vec3 target(-20, 58, -50);
 
     vec3 forward = GetForwardVector(camPos, target);
     std::array<float, 3> forwardArray = {forward.x, forward.y, forward.z};
@@ -133,6 +248,8 @@ void Aimbot(HANDLE hProcess, const uint32_t &gameAddr, const std::array<LPVOID, 
             //std::cout << "Wrote " << value << " to address " << addresses[i] << "\n";
         }
     }
+
+    //printf("end aimbot\n");
 }
 
 /**
@@ -243,34 +360,12 @@ void patchMovssInstruction(HANDLE hProcess, uintptr_t instructionAddress, LPVOID
     }
 }
 
-/**
- * @brief Write random float values to the 3 remote addresses.
- * @param hProcess Handle to the target process.
- * @param addresses Array of 3 addresses.
- */
-void writeRandomFloats(HANDLE hProcess, const std::array<LPVOID, 3>& addresses)
-{
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_real_distribution<float> dist(-1.0f, 1.0f);
-
-    for (int i = 0; i < 3; ++i) {
-        float value = dist(gen);
-        SIZE_T bytesWritten = 0;
-        if (!WriteProcessMemory(hProcess, addresses[i], &value, sizeof(float), &bytesWritten) || bytesWritten != sizeof(float)) {
-            std::cerr << "Failed to write float to remote process.\n";
-        } else {
-            //std::cout << "Wrote " << value << " to address " << addresses[i] << "\n";
-        }
-    }
-}
-
 void AimbotThreadFunc()
 {
     while (keepRunning.load()) {
         Aimbot(hProcess, gameAddress, addresses);
         // Optionally add a small sleep to reduce CPU usage
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
     cleanup();
 }
@@ -292,7 +387,7 @@ BOOL WINAPI CtrlHandler(DWORD fdwCtrlType)
 
         // CTRL-CLOSE: confirm that the user wants to exit.
     case CTRL_CLOSE_EVENT:
-        Beep(600, 200);
+        //Beep(600, 200);
         onExit();
         printf("Ctrl-Close event\n\n");
         return TRUE;
@@ -365,6 +460,8 @@ int main()
 
         // Start the Aimbot in a new thread
     new std::thread (AimbotThreadFunc);
+
+    //Aimbot(hProcess, gameAddress, addresses);
 
     std::atexit(onExit);
     getchar();
