@@ -30,6 +30,7 @@ const std::array<uintptr_t, 3> movssOffsets = {
     0x2d719f  // Replace with actual offset 3
 };
 
+// https://github.com/Angels-D/TroveAuto/blob/main/libs/Game.hpp
 namespace LocalPlayer {
     const std::vector<uint32_t> basePtrOffset = {0x1097438, 0x0}; 
 
@@ -47,6 +48,7 @@ namespace LocalPlayer {
     const std::vector<uint32_t> zOffsets = {0x88};
 }
 
+// https://github.com/Angels-D/TroveAuto/blob/main/libs/Game.hpp
 namespace World {
     const std::vector<uint32_t> worldOffset = {0x1097484, 0x0};
 
@@ -56,10 +58,7 @@ namespace World {
     const std::vector<uint32_t> sizeOffsets = {0x8};
 
     const std::vector<uint32_t> EntityOffsets = {0x10, 0xE8, 0x4, 0x0};
-    const std::vector<uint32_t> levelOffsets = {0x58, 0xE8, 0x54, 0x120};
     const std::vector<uint32_t> nameOffsets = {0x58, 0x64, 0x0};
-    const std::vector<uint32_t> isDeathOffsets = {0x58, 0x0};
-    const std::vector<uint32_t> healthOffsets = {0x58, 0xE8, 0x84, 0x80};
     const std::vector<uint32_t> xOffsets = {0x58, 0xE8, 0x4, 0x80};
     const std::vector<uint32_t> yOffsets = {0x58, 0xE8, 0x4, 0x84};
     const std::vector<uint32_t> zOffsets = {0x58, 0xE8, 0x4, 0x88};
@@ -77,6 +76,7 @@ struct Entity {
     }
 };
 
+// Restore original instructions
 void cleanup()
 {
     if (hProcess) {
@@ -109,11 +109,15 @@ bool isExcluded(const std::string& name) {
     return false;
 }
 
-const Entity NearestEntity(const uint32_t &world, const vec3 &ourPos, const float &range) {
+// find nearest entity within MaxRange
+// https://github.com/Angels-D/TroveAuto/blob/4c8ac261b499ea6804456b978e067470b3ee9997/libs/Game.hpp#L438
+// https://github.com/Angels-D/TroveAuto/blob/4c8ac261b499ea6804456b978e067470b3ee9997/libs/Game.hpp#L545
+// https://github.com/Angels-D/TroveAuto/blob/4c8ac261b499ea6804456b978e067470b3ee9997/libs/Game.hpp#L496
+const Entity NearestEntity(const uint32_t &world, const vec3 &ourPos, const float &MaxRange) {
     std::vector<uint32_t> nodes;
     Entity ret;
 
-    float nearestRange = range;
+    float nearestRange = MaxRange;
 
     const auto nodeInfo = GetAddress(world, World::NodeInfoOffsets);
 
