@@ -10,6 +10,26 @@
 
 uint32_t gameAddr;
 
+const std::vector excludedName = {
+    "pet",
+    "portal",
+    "abilities",
+    "placeable",
+    "cornerstone",
+    "services",
+    "client",
+    "mana",
+    "karma"
+};
+
+// hardcoded
+// 55 8B EC 83 E4 ? 83 EC ? F3 0F ? ? ? F3 0F ? ? ? ? ? ? 8B 55
+const std::array<uintptr_t, 3> movssOffsets = {
+    0x2d7133, // Replace with actual offset 1
+    0x2d7169, // Replace with actual offset 2
+    0x2d719f  // Replace with actual offset 3
+};
+
 namespace LocalPlayer {
     const std::vector<uint32_t> basePtrOffset = {0x1097438, 0x0}; 
 
@@ -57,13 +77,6 @@ struct Entity {
     }
 };
 
-// hardcoded
-const std::array<uintptr_t, 3> movssOffsets = {
-    0x2d7133, // Replace with actual offset 1
-    0x2d7169, // Replace with actual offset 2
-    0x2d719f  // Replace with actual offset 3
-};
-
 void cleanup()
 {
     if (hProcess) {
@@ -85,6 +98,15 @@ void cleanup()
         CloseHandle(hProcess);
         std::cout << "Cleanup done.\n";
     }
+}
+
+bool isExcluded(const std::string& name) {
+    for (const auto& excluded : excludedName) {
+        if (name.find(excluded) != std::string::npos) {
+            return true;
+        }
+    }
+    return false;
 }
 
 const Entity NearestEntity(const uint32_t &world, const vec3 &ourPos, const float &range) {
@@ -133,18 +155,7 @@ const Entity NearestEntity(const uint32_t &world, const vec3 &ourPos, const floa
                 auto delta = entityPos - ourPos;
 				auto dist = delta.length();
 
-                if (
-                    dist < nearestRange &&
-                    name2.find("pet") == std::string::npos &&
-                    name2.find("portal") == std::string::npos &&
-                    name2.find("abilities") == std::string::npos &&
-                    name2.find("placeable") == std::string::npos &&
-                    name2.find("cornerstone") == std::string::npos &&
-                    name2.find("services") == std::string::npos &&
-                    name2.find("client") == std::string::npos &&
-                    name2.find("mana") == std::string::npos &&
-                    name2.find("karma") == std::string::npos
-                    ) {
+                if (dist < nearestRange && !isExcluded(name2)) {
                     nearestRange = dist;
                     ret.position = entityPos;
                     ret.name = name2;
@@ -219,18 +230,10 @@ BOOL WINAPI CtrlHandler(DWORD fdwCtrlType)
     case CTRL_BREAK_EVENT:
         cleanup();
         return FALSE;
-
-    case CTRL_LOGOFF_EVENT:
-        cleanup();
-        return FALSE;
-
-    case CTRL_SHUTDOWN_EVENT:
-        cleanup();
-        return FALSE;
-
     default:
         return FALSE;
     }
+
 }
 
 int main()
